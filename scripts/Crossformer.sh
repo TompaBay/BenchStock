@@ -1,0 +1,27 @@
+python -u run.py \
+  --is_training 1 \
+  --gpu 1 \
+  --root_path ./dataset/ \
+  --data_path us.feather \
+  --full True\
+  --model_id us_64_1 \
+  --model Crossformer \
+  --data custom \
+  --exp Main\
+  --market us \
+  --features d \
+  --seq_len 64 \
+  --label_len 32 \
+  --train_label_len 1 \
+  --pred_len 1 \
+  --e_layers 2 \
+  --d_layers 1 \
+  --factor 3 \
+  --enc_in 7 \
+  --dec_in 7 \
+  --c_out 1 \
+  --win_size 2 \
+  --seg_len 2 \
+  --final_out 1 \
+  --des 'Exp' \
+  --itr 1

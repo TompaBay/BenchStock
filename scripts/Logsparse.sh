@@ -1,0 +1,28 @@
+python -u run.py \
+  --is_training 1 \
+  --train_size 1 \
+  --val_size 1 \
+  --test_size 1 \
+  --root_path ./dataset/ \
+  --data_path us.feather \
+  --full True\
+  --model_id us_64_1 \
+  --model Logsparse \
+  --data custom \
+  --exp Former\
+  --market us \
+  --features d \
+  --seq_len 64 \
+  --label_len 32 \
+  --train_label_len 1 \
+  --pred_len 1 \
+  --e_layers 2 \
+  --d_layers 1 \
+  --factor 3 \
+  --enc_in 7 \
+  --dec_in 7 \
+  --c_out 7 \
+  --final_out 1 \
+  --sparse_flag True\
+  --des 'Exp' \
+  --itr 1

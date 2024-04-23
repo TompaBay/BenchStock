@@ -1,0 +1,23 @@
+python -u run.py \
+  --is_training 1 \
+  --gpu 3 \
+  --root_path ./dataset/ \
+  --data_path us.feather \
+  --full True\
+  --model_id us_64_1 \
+  --model Rf \
+  --exp Basic\
+  --data custom \
+  --market us \
+  --features D \
+  --train_epochs 20 \
+  --pred_len 1 \
+  --train_label_len 1\
+  --ntrees 10 \
+  --max_depth 10 \
+  --min_split 10000 \
+  --min_leaf 10000 \
+  --c_out 1 \
+  --flat True \
+  --des 'Exp' \
+  --itr 5

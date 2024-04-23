@@ -1,0 +1,30 @@
+python -u run.py \
+  --is_training 1 \
+  --gpu 1 \
+  --train_size 1 \
+  --val_size 1 \
+  --test_size 1 \
+  --root_path ./dataset/ \
+  --data_path us_con.feather \
+  --graph graph \
+  --full False\
+  --model_id us_64_1 \
+  --model Sthan_sr\
+  --exp Graph\
+  --data custom \
+  --market us \
+  --features d \
+  --train_epochs 1 \
+  --batch_size 1 \
+  --seq_len 64 \
+  --pred_len 1 \
+  --train_label_len 1\
+  --e_layers 1 \
+  --d_layers 1 \
+  --enc_in 7 \
+  --d_model 32\
+  --c_out 1 \
+  --gl 0 \
+  --alpha 0.1 \
+  --des 'Exp' \
+  --itr 5

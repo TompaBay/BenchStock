@@ -1,0 +1,25 @@
+python -u run.py \
+  --is_training 1 \
+  --gpu 3 \
+  --root_path ./dataset/ \
+  --data_path us.feather \
+  --full True\
+  --model_id us_64_1 \
+  --model Autoformer \
+  --data custom \
+  --exp Former\
+  --market us \
+  --features d \
+  --seq_len 64 \
+  --label_len 32 \
+  --train_label_len 1 \
+  --pred_len 1 \
+  --e_layers 1 \
+  --d_layers 1 \
+  --factor 3 \
+  --enc_in 7 \
+  --dec_in 7 \
+  --c_out 7 \
+  --final_out 1 \
+  --des 'Exp' \
+  --itr 1

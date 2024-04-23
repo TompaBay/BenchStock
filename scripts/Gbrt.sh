@@ -1,0 +1,22 @@
+python -u run.py \
+  --is_training 1 \
+  --gpu 4 \
+  --test_size 2\
+  --root_path ./dataset/ \
+  --data_path us.feather \
+  --full True\
+  --model_id us_64_1 \
+  --model Gbrt \
+  --exp Basic\
+  --data custom \
+  --market us \
+  --features D \
+  --train_epochs 20 \
+  --pred_len 1 \
+  --train_label_len 1\
+  --max_iter 50 \
+  --max_depth 10 \
+  --c_out 1 \
+  --flat True \
+  --des 'Exp' \
+  --itr 5
