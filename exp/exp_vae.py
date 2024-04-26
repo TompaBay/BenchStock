@@ -19,6 +19,8 @@ import torch.nn.functional as F
 import torch.optim as optim
 from torch.utils.data import DataLoader, Dataset
 
+import bisect
+import psutil
 import os
 import time
 from tqdm import tqdm
@@ -56,28 +58,32 @@ class Exp_Vae(Exp):
         self.path = os.path.join(self.path, str(self.trial))
         os.makedirs(self.path, exist_ok=True)
             
+        self.df_train = df_train
+        self.df_valid = df_valid
+        self.df_test = df_test
 
-        train_feature, train_label = self.process_data(df_train)
-        valid_feature, valid_label = self.process_data(df_valid)
 
-        train = TrainDataset(train_feature, train_label)
-        train_args = dict(shuffle=True, batch_size=self.args.batch_size, num_workers=8)
-        self.train_loader = DataLoader(train, **train_args)
+        # train_feature, train_label = self.process_data(df_train)
+        # valid_feature, valid_label = self.process_data(df_valid)
 
-        val = TrainDataset(valid_feature, valid_label)
-        val_args = dict(shuffle=False, batch_size=self.args.batch_size, num_workers=8)
-        self.val_loader = DataLoader(val, **val_args)
+        # train = TrainDataset(train_feature, train_label)
+        # train_args = dict(shuffle=True, batch_size=self.args.batch_size, num_workers=8)
+        # self.train_loader = DataLoader(train, **train_args)
 
-        # if not full:
-        # test_feature, test_label = self.process_test_data(df_test)
+        # val = TrainDataset(valid_feature, valid_label)
+        # val_args = dict(shuffle=False, batch_size=self.args.batch_size, num_workers=8)
+        # self.val_loader = DataLoader(val, **val_args)
+
+        # # if not full:
+        # # test_feature, test_label = self.process_test_data(df_test)
+        # # test = TrainDataset(test_feature, test_label)
+        # # test_args = dict(shuffle=False, batch_size=1, num_workers=8)
+        # # self.test_loader = DataLoader(test, **test_args)
+        # # else:
+        # test_feature, test_label, self.df_test = self.process_data(df_test, test=True)
         # test = TrainDataset(test_feature, test_label)
-        # test_args = dict(shuffle=False, batch_size=1, num_workers=8)
+        # test_args = dict(shuffle=False, batch_size=self.args.batch_size, num_workers=8)
         # self.test_loader = DataLoader(test, **test_args)
-        # else:
-        test_feature, test_label, self.df_test = self.process_data(df_test, test=True)
-        test = TrainDataset(test_feature, test_label)
-        test_args = dict(shuffle=False, batch_size=self.args.batch_size, num_workers=8)
-        self.test_loader = DataLoader(test, **test_args)
 
         # self.model = ALSTM(train_feature[0].shape[1], self.parameters['unit']).to(device)
         self.model = self._build_model()
@@ -196,55 +202,145 @@ class Exp_Vae(Exp):
         train_loss = 0
         prediction = []
         label = []
-        for (inputs, targets) in tqdm(self.train_loader):
-            inputs, targets = inputs.to(self.args.gpu), targets.to(self.args.gpu)
-            self.optimizer.zero_grad()
 
-            y_mu, y_sigma, mu_post, sigma_post, mu_prior, sigma_prior = self.model(inputs, targets)
-            loss = self.loss_function(targets, y_mu, mu_post, sigma_post, mu_prior, sigma_prior)
+        dates = self.df_train['date'].unique()
+        dates.sort()
 
-            if self.args.use_amp:
-                self.scaler.scale(loss).backward()
-                self.scaler.step(self.optimizer)
-                self.scaler.update()
-            else:
-                loss.backward()
-                self.optimizer.step()
+        years = np.arange(self.args.year, self.args.year + self.args.train_size + 1)
+        
+        print("Train")
+        for i in range(len(years) - 1):
+            start = max(bisect.bisect_left(dates, str(years[i]) + "-01-01") - self.args.seq_len, 0)
+            df = self.df_train[(self.df_train['date'] >= dates[start]) & (self.df_train['date'] < (str(years[i+1]) + "-01-01"))]
 
-            train_loss += loss.item()
+            train_feature, train_label = self.process_data(df)
 
-            prediction.extend(list(y_mu.detach().cpu().numpy().reshape(-1)))
-            label.extend(list(targets.detach().cpu().numpy().reshape(-1)))
+            pid = psutil.Process()
 
-            del inputs
-            del targets
-            del loss
+            # Get memory usage statistics
+            memory_info = pid.memory_info()
 
-            
-        train_loss /= len(self.train_loader)
-        train_r2 = r2(prediction, label)
-        print("Training r2:"+ str(train_r2) + "  Training loss:" + str(train_loss))
+            memory_usage_gb = memory_info.rss / (1024 * 1024 * 1024)
+            print("after process")
+            print("Memory usage (GB):", memory_usage_gb)
+
+            train = TrainDataset(train_feature, train_label)
+            train_args = dict(shuffle=True, batch_size=self.args.batch_size, num_workers=8)
+            self.train_loader = DataLoader(train, **train_args)
+
+            print("after dataloader")
+            pid = psutil.Process()
+
+            # Get memory usage statistics
+            memory_info = pid.memory_info()
+
+            memory_usage_gb = memory_info.rss / (1024 * 1024 * 1024)
+            print("Memory usage (GB):", memory_usage_gb)
+
+            for (inputs, targets) in tqdm(self.train_loader):
+                inputs, targets = inputs.to(self.args.gpu), targets.to(self.args.gpu)
+                self.optimizer.zero_grad()
+
+                y_mu, y_sigma, mu_post, sigma_post, mu_prior, sigma_prior = self.model(inputs, targets)
+                loss = self.loss_function(targets, y_mu, mu_post, sigma_post, mu_prior, sigma_prior)
+
+                if self.args.use_amp:
+                    self.scaler.scale(loss).backward()
+                    self.scaler.step(self.optimizer)
+                    self.scaler.update()
+                else:
+                    loss.backward()
+                    self.optimizer.step()
+
+                train_loss += loss.item()
+
+                prediction.extend(list(y_mu.detach().cpu().numpy().reshape(-1)))
+                label.extend(list(targets.detach().cpu().numpy().reshape(-1)))
+
+                del inputs
+                del targets
+                del loss
+
+                
+            train_loss /= len(self.train_loader)
+            train_r2 = r2(prediction, label)
+            print("Training r2:"+ str(train_r2) + "  Training loss:" + str(train_loss))
+        
+        del train_feature
+        del train_label
+        del train
+        del self.train_loader
+        del prediction
+        del label
 
     
     def vali(self):
         self.model.eval()
         val_loss = 0
+        loss_ls = []
         prediction = []
         label = []
 
-        for (inputs, targets) in tqdm(self.val_loader):
-            inputs, targets = inputs.to(self.args.gpu), targets.to(self.args.gpu)
-            y_mu, y_sigma = self.model(inputs, targets, test=True)
+        dates = self.df_valid['date'].unique()
+        dates.sort()
 
-            prediction.extend(list(y_mu.detach().cpu().numpy().reshape(-1)))
-            label.extend(list(targets.detach().cpu().numpy().reshape(-1)))
+        years = np.arange(self.args.year + self.args.train_size, self.args.year + self.args.train_size + self.args.val_size + 1)
+        
+        print("Valid")
+        for i in range(len(years) - 1):
+            val_loss = 0
+            start = max(bisect.bisect_left(dates, str(years[i]) + "-01-01") - self.args.seq_len, 0)
+            df = self.df_valid[(self.df_valid['date'] >= dates[start]) & (self.df_valid['date'] < (str(years[i+1]) + "-01-01"))]
 
-            del inputs
-            del targets
+            valid_feature, valid_label = self.process_data(df)
 
-        val_loss /= len(self.val_loader)
+            pid = psutil.Process()
+
+            # Get memory usage statistics
+            memory_info = pid.memory_info()
+
+            memory_usage_gb = memory_info.rss / (1024 * 1024 * 1024)
+            print("after process")
+            print("Memory usage (GB):", memory_usage_gb)
+
+            valid = TrainDataset(valid_feature, valid_label)
+            valid_args = dict(shuffle=False, batch_size=self.args.batch_size, num_workers=8)
+            self.val_loader = DataLoader(valid, **valid_args)
+
+            print("after dataloader")
+            pid = psutil.Process()
+
+            # Get memory usage statistics
+            memory_info = pid.memory_info()
+
+            memory_usage_gb = memory_info.rss / (1024 * 1024 * 1024)
+            print("Memory usage (GB):", memory_usage_gb)
+
+            for (inputs, targets) in tqdm(self.val_loader):
+                inputs, targets = inputs.to(self.args.gpu), targets.to(self.args.gpu)
+                y_mu, y_sigma = self.model(inputs, targets, test=True)
+
+                prediction.extend(list(y_mu.detach().cpu().numpy().reshape(-1)))
+                label.extend(list(targets.detach().cpu().numpy().reshape(-1)))
+
+                del inputs
+                del targets
+
+            val_loss /= len(self.val_loader)
+            loss_ls.append(val_loss)
+
+
+        val_loss = np.mean(np.array(loss_ls))
         val_r2 = r2(prediction, label)
         print("Valid r2:"+ str(val_r2))
+
+        del valid_feature
+        del valid_label
+        del valid
+        del self.val_loader
+        del prediction
+        del label
+
         return val_r2
 
 
@@ -259,6 +355,11 @@ class Exp_Vae(Exp):
 
         prediction = []
         label = []
+
+        test_feature, test_label, self.df_test = self.process_data(self.df_test, test=True)
+        test = TrainDataset(test_feature, test_label)
+        test_args = dict(shuffle=False, batch_size=self.args.batch_size, num_workers=8)
+        self.test_loader = DataLoader(test, **test_args)
 
         for (inputs, targets) in tqdm(self.test_loader):
             inputs, targets = inputs.to(self.args.gpu), targets.to(self.args.gpu)

@@ -13,12 +13,13 @@ from utils.loss.pair_dist import *
 
 
 class TransferLoss(object):
-    def __init__(self, loss_type='cosine', input_dim=512):
+    def __init__(self, loss_type='cosine', input_dim=512, device=torch.device("cuda" if torch.cuda.is_available() else "cpu")):
         """
         Supported loss_type: mmd(mmd_lin), mmd_rbf, coral, cosine, kl, js, mine, adv
         """
         self.loss_type = loss_type
         self.input_dim = input_dim
+        self.device = device
 
     def compute(self, X, Y):
         """Compute adaptation loss
@@ -46,7 +47,7 @@ class TransferLoss(object):
                 input_dim=self.input_dim, hidden_dim=60).cuda()
             loss = mine_model(X, Y)
         elif self.loss_type == 'adv':
-            loss = adv(X, Y, input_dim=self.input_dim, hidden_dim=32)
+            loss = adv(X, Y, input_dim=self.input_dim, hidden_dim=32, device=self.device)
         elif self.loss_type == 'mmd_rbf':
             mmdloss = MMD_loss(kernel_type='rbf')
             loss = mmdloss(X, Y)
@@ -141,7 +142,7 @@ class Model(nn.Module):
         loss_transfer = torch.zeros((1,)).to(self.device)
         for i in range(len(out_list_s)):
             criterion_transder = TransferLoss(
-                loss_type=self.trans_loss, input_dim=out_list_s[i].shape[2])
+                loss_type=self.trans_loss, input_dim=out_list_s[i].shape[2], device=self.device)
             h_start = 0 
             for j in range(h_start, self.len_seq, 1):
                 i_start = j - len_win if j - len_win >= 0 else 0
@@ -207,7 +208,7 @@ class Model(nn.Module):
         dist_mat = torch.zeros(self.num_layers, self.len_seq).to(self.device)
         for i in range(len(out_list_s)):
             criterion_transder = TransferLoss(
-                loss_type=self.trans_loss, input_dim=out_list_s[i].shape[2])
+                loss_type=self.trans_loss, input_dim=out_list_s[i].shape[2], device=self.device)
             for j in range(self.len_seq):
                 loss_trans = criterion_transder.compute(
                     out_list_s[i][:, j, :], out_list_t[i][:, j, :])

@@ -19,6 +19,8 @@ import torch.nn.functional as F
 import torch.optim as optim
 from torch.utils.data import DataLoader, Dataset
 
+import bisect
+import psutil
 import os
 import time
 from tqdm import tqdm
@@ -63,34 +65,38 @@ class Exp_Adarnn(Exp):
             os.makedirs(self.path)
         self.path = os.path.join(self.path, str(self.trial))
         os.makedirs(self.path, exist_ok=True)
+
+        self.df_train = df_train
+        self.df_valid = df_valid
+        self.df_test = df_test
             
-        dates = df_train['date'].unique()
-        dates.sort()
-        date_splits = np.array_split(np.array(dates), self.args.n_domains)
+        # dates = df_train['date'].unique()
+        # dates.sort()
+        # date_splits = np.array_split(np.array(dates), self.args.n_domains)
 
-        train_list = [df_train[(df_train['date'] <= date[-1]) & (df_train['date'] >= date[0])] for date in date_splits]
-        train_list = [self.process_data(train) for train in train_list]
-        input_dim = train_list[0][0][0].shape[1]
-        valid_feature, valid_label = self.process_data(df_valid)
+        # train_list = [df_train[(df_train['date'] <= date[-1]) & (df_train['date'] >= date[0])] for date in date_splits]
+        # train_list = [self.process_data(train) for train in train_list]
+        # input_dim = train_list[0][0][0].shape[1]
+        # valid_feature, valid_label = self.process_data(df_valid)
 
-        train_list = [TrainDataset(train_feature, train_label) for (train_feature, train_label) in train_list]
-        train_args = dict(shuffle=True, batch_size=self.args.batch_size, num_workers=8)
-        self.train_loader_list = [DataLoader(train, **train_args) for train in train_list]
+        # train_list = [TrainDataset(train_feature, train_label) for (train_feature, train_label) in train_list]
+        # train_args = dict(shuffle=True, batch_size=self.args.batch_size, num_workers=8)
+        # self.train_loader_list = [DataLoader(train, **train_args) for train in train_list]
 
-        val = TrainDataset(valid_feature, valid_label)
-        val_args = dict(shuffle=False, batch_size=self.args.batch_size, num_workers=8)
-        self.val_loader = DataLoader(val, **val_args)
+        # val = TrainDataset(valid_feature, valid_label)
+        # val_args = dict(shuffle=False, batch_size=self.args.batch_size, num_workers=8)
+        # self.val_loader = DataLoader(val, **val_args)
 
-        # if not full:
-        # test_feature, test_label = self.process_test_data(df_test)
+        # # if not full:
+        # # test_feature, test_label = self.process_test_data(df_test)
+        # # test = TrainDataset(test_feature, test_label)
+        # # test_args = dict(shuffle=False, batch_size=1, num_workers=8)
+        # # self.test_loader = DataLoader(test, **test_args)
+        # # else:
+        # test_feature, test_label, self.df_test = self.process_data(df_test, test=True)
         # test = TrainDataset(test_feature, test_label)
-        # test_args = dict(shuffle=False, batch_size=1, num_workers=8)
+        # test_args = dict(shuffle=False, batch_size=self.args.batch_size, num_workers=8)
         # self.test_loader = DataLoader(test, **test_args)
-        # else:
-        test_feature, test_label, self.df_test = self.process_data(df_test, test=True)
-        test = TrainDataset(test_feature, test_label)
-        test_args = dict(shuffle=False, batch_size=self.args.batch_size, num_workers=8)
-        self.test_loader = DataLoader(test, **test_args)
 
         self.model = self._build_model()
         self.criterion = nn.MSELoss()
@@ -213,66 +219,101 @@ class Exp_Adarnn(Exp):
         out_weight_list = None
         loss_all = []
         loss_1_all = []
-        dist_mat = torch.zeros(self.args.e_layers, self.args.seq_len).to(self.args.gpu)
-        len_loader = np.inf
-        for loader in self.train_loader_list:
-            if len(loader) < len_loader:
-                len_loader = len(loader)
 
-        for data_all in tqdm(zip(*self.train_loader_list), total=len_loader):
-            self.optimizer.zero_grad()
-            list_feat = []
-            list_label = []
-            for data in data_all:
-                feature, label = data[0].to(self.args.gpu), data[1].to(self.args.gpu)
-                list_feat.append(feature)
-                list_label.append(label)
-                
-            flag = False
+        dates = self.df_train['date'].unique()
+        dates.sort()
 
-            index = get_index(len(data_all) - 1)
-            for temp_index in index:
-                s1 = temp_index[0]
-                s2 = temp_index[1]
-                if list_feat[s1].shape[0] != list_feat[s2].shape[0]:
-                    flag = True
-                    break
-            if flag:
-                continue
+        years = np.arange(self.args.year, self.args.year + self.args.train_size + 1)
+        
+        print("Train")
+        for i in range(len(years) - 1):
+            start = max(bisect.bisect_left(dates, str(years[i]) + "-01-01") - self.args.seq_len, 0)
+            df = self.df_train[(self.df_train['date'] >= dates[start]) & (self.df_train['date'] < (str(years[i+1]) + "-01-01"))]
 
-            total_loss = torch.zeros(1, requires_grad=True).to(self.args.gpu)
-            for i in range(len(index)):
-                feature_s = list_feat[index[i][0]]
-                feature_t = list_feat[index[i][1]]
-                label_reg_s = list_label[index[i][0]]
-                label_reg_t = list_label[index[i][1]]
-                feature_all = torch.cat((feature_s, feature_t), 0)
+            print("after dataloader")
+            pid = psutil.Process()
 
-                if epoch < self.args.pre_epoch:
-                    pred_all, loss_transfer, out_weight_list = self.model.forward_pre_train(
-                        feature_all, len_win=self.args.win_len)
-                else:
-                    pred_all, loss_transfer, dist, weight_mat = self.model.forward_Boosting(
-                        feature_all, weight_mat)
-                    dist_mat = dist_mat + dist
-                pred_s = pred_all[0:feature_s.size(0)]
-                pred_t = pred_all[feature_s.size(0):]
+            # Get memory usage statistics
+            memory_info = pid.memory_info()
 
-                loss_s = self.criterion(pred_s, label_reg_s)
-                loss_t = self.criterion(pred_t, label_reg_t)
+            memory_usage_gb = memory_info.rss / (1024 * 1024 * 1024)
+            print("Memory usage (GB):", memory_usage_gb)
 
-                loss_l1 = self.criterion_1(pred_s, label_reg_s)
-                total_loss = total_loss + loss_s + loss_t + self.args.dw * loss_transfer
-            loss_all.append(
-                [total_loss.item(), (loss_s + loss_t).item(), loss_transfer.item()])
-            loss_1_all.append(loss_l1.item())
-            self.optimizer.zero_grad()
-            total_loss.backward()
-            nn.utils.clip_grad_value_(self.model.parameters(), 3.)
-            self.optimizer.step()
+            dates = df['date'].unique()
+            dates.sort()
+            date_splits = np.array_split(np.array(dates), self.args.n_domains)
 
-        loss = np.array(loss_all).mean(axis=0)
-        loss_l1 = np.array(loss_1_all).mean()
+            train_list = [df[(df['date'] <= date[-1]) & (df['date'] >= date[0])] for date in date_splits]
+            train_list = [self.process_data(train) for train in train_list]
+            input_dim = train_list[0][0][0].shape[1]
+
+            train_list = [TrainDataset(train_feature, train_label) for (train_feature, train_label) in train_list]
+            train_args = dict(shuffle=True, batch_size=self.args.batch_size, num_workers=8)
+            self.train_loader_list = [DataLoader(train, **train_args) for train in train_list]
+
+            dist_mat = torch.zeros(self.args.e_layers, self.args.seq_len).to(self.args.gpu)
+            len_loader = np.inf
+            for loader in self.train_loader_list:
+                if len(loader) < len_loader:
+                    len_loader = len(loader)
+
+            for data_all in tqdm(zip(*self.train_loader_list), total=len_loader):
+                self.optimizer.zero_grad()
+                list_feat = []
+                list_label = []
+                for data in data_all:
+                    feature, label = data[0].to(self.args.gpu), data[1].to(self.args.gpu)
+                    list_feat.append(feature)
+                    list_label.append(label)
+                    
+                flag = False
+
+                index = get_index(len(data_all) - 1)
+                for temp_index in index:
+                    s1 = temp_index[0]
+                    s2 = temp_index[1]
+                    if list_feat[s1].shape[0] != list_feat[s2].shape[0]:
+                        flag = True
+                        break
+                if flag:
+                    continue
+
+                total_loss = torch.zeros(1, requires_grad=True).to(self.args.gpu)
+                for i in range(len(index)):
+                    feature_s = list_feat[index[i][0]]
+                    feature_t = list_feat[index[i][1]]
+                    label_reg_s = list_label[index[i][0]]
+                    label_reg_t = list_label[index[i][1]]
+                    feature_all = torch.cat((feature_s, feature_t), 0)
+
+                    if epoch < self.args.pre_epoch:
+                        pred_all, loss_transfer, out_weight_list = self.model.forward_pre_train(
+                            feature_all, len_win=self.args.win_len)
+                    else:
+                        pred_all, loss_transfer, dist, weight_mat = self.model.forward_Boosting(
+                            feature_all, weight_mat)
+                        dist_mat = dist_mat + dist
+                    pred_s = pred_all[0:feature_s.size(0)]
+                    pred_t = pred_all[feature_s.size(0):]
+
+                    loss_s = self.criterion(pred_s, label_reg_s)
+                    loss_t = self.criterion(pred_t, label_reg_t)
+
+                    loss_l1 = self.criterion_1(pred_s, label_reg_s)
+                    total_loss = total_loss + loss_s + loss_t + self.args.dw * loss_transfer
+                loss_all.append(
+                    [total_loss.item(), (loss_s + loss_t).item(), loss_transfer.item()])
+                loss_1_all.append(loss_l1.item())
+                self.optimizer.zero_grad()
+                total_loss.backward()
+                nn.utils.clip_grad_value_(self.model.parameters(), 3.)
+                self.optimizer.step()
+
+            loss = np.array(loss_all).mean(axis=0)
+            loss_l1 = np.array(loss_1_all).mean()
+        
+        
+
         if epoch >= self.args.pre_epoch:
             if epoch > self.args.pre_epoch:
                 weight_mat = self.model.update_weight_Boosting(
