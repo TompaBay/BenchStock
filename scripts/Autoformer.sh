@@ -1,6 +1,6 @@
 python -u run.py \
   --is_training 1 \
-  --gpu 6 \
+  --gpu 0 \
   --start 1979 \
   --train_start 1979\
   --train_size 10 \
@@ -20,7 +20,7 @@ python -u run.py \
   --label_len 32 \
   --train_label_len 1 \
   --train_epochs 20 \
-  --batch_size 128 \
+  --batch_size 512 \
   --pred_len 1 \
   --e_layers 1 \
   --d_layers 1 \
@@ -34,6 +34,7 @@ python -u run.py \
 
 python -u run.py \
   --is_training 1 \
+  --gpu 0 \
   --start 1979 \
   --train_start 1985 \
   --train_size 10 \
@@ -53,7 +54,7 @@ python -u run.py \
   --label_len 32 \
   --train_label_len 1 \
   --train_epochs 20 \
-  --batch_size 128 \
+  --batch_size 512 \
   --pred_len 1 \
   --e_layers 1 \
   --d_layers 1 \
@@ -67,7 +68,7 @@ python -u run.py \
 
 python -u run.py \
   --is_training 1 \
-  --gpu 6 \
+  --gpu 0 \
   --start 1979 \
   --train_start 1995 \
   --train_size 10 \
@@ -87,7 +88,7 @@ python -u run.py \
   --label_len 32 \
   --train_label_len 1 \
   --train_epochs 20 \
-  --batch_size 128 \
+  --batch_size 512 \
   --pred_len 1 \
   --e_layers 1 \
   --d_layers 1 \

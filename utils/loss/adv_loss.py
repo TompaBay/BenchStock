@@ -33,12 +33,12 @@ class Discriminator(nn.Module):
         return x
 
 
-def adv(source, target, input_dim=256, hidden_dim=512):
+def adv(source, target, input_dim=256, hidden_dim=512, device=torch.device("cuda" if torch.cuda.is_available() else "cpu")):
     domain_loss = nn.BCELoss()
     # !!! Pay attention to .cuda !!!
-    adv_net = Discriminator(input_dim, hidden_dim).cuda()
-    domain_src = torch.ones(len(source)).cuda()
-    domain_tar = torch.zeros(len(target)).cuda()
+    adv_net = Discriminator(input_dim, hidden_dim).cuda(device=device)
+    domain_src = torch.ones(len(source)).cuda(device)
+    domain_tar = torch.zeros(len(target)).cuda(device)
     domain_src, domain_tar = domain_src.view(domain_src.shape[0], 1), domain_tar.view(domain_tar.shape[0], 1)
     reverse_src = ReverseLayerF.apply(source, 1)
     reverse_tar = ReverseLayerF.apply(target, 1)

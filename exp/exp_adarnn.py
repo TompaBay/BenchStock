@@ -220,6 +220,9 @@ class Exp_Adarnn(Exp):
         loss_all = []
         loss_1_all = []
 
+        loss_ls = []
+        loss_1_ls = []
+
         dates = self.df_train['date'].unique()
         dates.sort()
 
@@ -312,7 +315,11 @@ class Exp_Adarnn(Exp):
             loss = np.array(loss_all).mean(axis=0)
             loss_l1 = np.array(loss_1_all).mean()
         
+            loss_ls.append(loss)
+            loss_1_ls.append(loss_l1)
         
+        loss = np.array(loss_ls).mean()
+        loss_l1 = np.array(loss_1_ls).mean()
 
         if epoch >= self.args.pre_epoch:
             if epoch > self.args.pre_epoch:
@@ -329,24 +336,71 @@ class Exp_Adarnn(Exp):
         val_loss = 0
         prediction = []
         label = []
+        loss_ls = []
 
-        for (inputs, targets) in tqdm(self.val_loader):
-            inputs, targets = inputs.to(self.args.gpu), targets.to(self.args.gpu)
-            
-            output = self.model.predict(inputs)
-            loss = self.criterion(output, targets)
-            val_loss += loss.item()
+        dates = self.df_valid['date'].unique()
+        dates.sort()
 
-            prediction.extend(list(output.detach().cpu().numpy().reshape(-1)))
-            label.extend(list(targets.detach().cpu().numpy().reshape(-1)))
+        years = np.arange(self.args.year + self.args.train_size, self.args.year + self.args.train_size + self.args.val_size + 1)
+        
+        print("Valid")
+        for i in range(len(years) - 1):
+            val_loss = 0
+            start = max(bisect.bisect_left(dates, str(years[i]) + "-01-01") - self.args.seq_len, 0)
+            df = self.df_valid[(self.df_valid['date'] >= dates[start]) & (self.df_valid['date'] < (str(years[i+1]) + "-01-01"))]
 
-            del inputs
-            del targets
-            del loss
+            valid_feature, valid_label = self.process_data(df)
 
-        val_loss /= len(self.val_loader)
+            pid = psutil.Process()
+
+            # Get memory usage statistics
+            memory_info = pid.memory_info()
+
+            memory_usage_gb = memory_info.rss / (1024 * 1024 * 1024)
+            print("after process")
+            print("Memory usage (GB):", memory_usage_gb)
+
+            valid = TrainDataset(valid_feature, valid_label)
+            valid_args = dict(shuffle=False, batch_size=self.args.batch_size, num_workers=8)
+            self.val_loader = DataLoader(valid, **valid_args)
+
+            print("after dataloader")
+            pid = psutil.Process()
+
+            # Get memory usage statistics
+            memory_info = pid.memory_info()
+
+            memory_usage_gb = memory_info.rss / (1024 * 1024 * 1024)
+            print("Memory usage (GB):", memory_usage_gb)
+
+            for (inputs, targets) in tqdm(self.val_loader):
+                inputs, targets = inputs.to(self.args.gpu), targets.to(self.args.gpu)
+                
+                output = self.model(inputs)
+                loss = self.criterion(output, targets)
+                val_loss += loss.item()
+
+                prediction.extend(list(output.detach().cpu().numpy().reshape(-1)))
+                label.extend(list(targets.detach().cpu().numpy().reshape(-1)))
+
+                del inputs
+                del targets
+                del loss
+
+            val_loss /= len(self.val_loader)
+            loss_ls.append(val_loss)
+
+        val_loss = np.mean(np.array(loss_ls))
         val_r2 = r2(prediction, label)
         print("Valid r2:"+ str(val_r2) + "  Valid loss:" + str(val_loss))
+
+        del valid_feature
+        del valid_label
+        del valid
+        del self.val_loader
+        del prediction
+        del label
+
         return val_loss, val_r2
 
 
@@ -362,9 +416,14 @@ class Exp_Adarnn(Exp):
         prediction = []
         label = []
 
+        test_feature, test_label, self.df_test = self.process_data(self.df_test, test=True)
+        test = TrainDataset(test_feature, test_label)
+        test_args = dict(shuffle=False, batch_size=self.args.batch_size, num_workers=8)
+        self.test_loader = DataLoader(test, **test_args)
+
         for (inputs, targets) in tqdm(self.test_loader):
             inputs, targets = inputs.to(self.args.gpu), targets.to(self.args.gpu)
-            output = self.model.predict(inputs)
+            output = self.model(inputs, test=True)
             
             prediction.append(output.detach().cpu().numpy().reshape(-1))
             label.append(targets.detach().cpu().numpy().reshape(-1))
