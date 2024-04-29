@@ -392,6 +392,11 @@ class Exp_Former(Exp):
         self.model.load_state_dict(checkpoint['model_state_dict'])
         self.model.eval()
 
+        test_feature, test_stamp, test_label, self.df_test = self.process_data(self.df_test, test=True)
+        test = TrainDataset(test_feature, self.args.seq_len, self.args.label_len, self.args.pred_len, test_stamp, test_label)
+        test_args = dict(shuffle=False, batch_size=self.args.batch_size, num_workers=8)
+        self.test_loader = DataLoader(test, **test_args)
+
         prediction = []
         label = []
 
