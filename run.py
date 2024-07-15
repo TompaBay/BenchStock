@@ -1,3 +1,4 @@
+import psutil
 import argparse
 import os
 import json
@@ -25,9 +26,9 @@ def main():
     parser.add_argument('--is_training', type=int, required=True, default=1, help='status')
     parser.add_argument('--model_id', type=str, required=True, default='test', help='model id')
     parser.add_argument('--model', type=str, required=True, default='Autoformer',
-                        help='model name, options: [Autoformer, Informer, Transformer]')
+                        help='model name')
     parser.add_argument('--exp', type=str, required=True, default='Main',
-                        help='train function name, options: [Main, Former]')
+                        help='train function name, options: [Basic, Main, Former, Graph, Vae, Adarnn]')
 
     # data loader
     parser.add_argument('--data', type=str, required=True, default='custom', help='dataset type')
@@ -44,6 +45,7 @@ def main():
     parser.add_argument('--checkpoints', type=str, default='./checkpoints/', help='location of model checkpoints')
 
     # dataset split
+    parser.add_argument('--start', type=int, default=1960, help="The whole trial's start year")
     parser.add_argument('--train_start', type=int, default=2000, help='training start year')
     parser.add_argument('--train_size', type=int, default=5, help='number of years included in training set')
     parser.add_argument('--val_start_year', type=int, default=2005, help='validation start year')
@@ -91,7 +93,7 @@ def main():
     parser.add_argument('--seg_len', type=int, default=2, help='Segment length for Crossformer')
     parser.add_argument('--hidden_layer', default=[64, 32, 16], nargs='+', type=int,
                         help="number of hidden units in each layer in MLP and Adarnn, a standard format of the input would be like '128 64 32', which standards for three hidden layers")
-    parser.add_argument('--flat', type=bool, default=False, help="Whether the sequence data should be transformed into flatten form")
+    parser.add_argument('--flat', type=str, default="False", help="Whether the sequence data should be transformed into flatten form")
     parser.add_argument('--ntrees', type=int, default=10, help="Number of trees for random forest model")
     parser.add_argument('--max_iter', type=int, default=50, help="Maximum iteration of gradient boost model")
     parser.add_argument('--max_depth', type=int, default=10, help="Maximum depth of tree models")
@@ -145,12 +147,6 @@ def main():
     args = parser.parse_args()
 
     args.use_gpu = True if torch.cuda.is_available() and args.use_gpu else False
-
-    # if args.use_gpu and args.use_multi_gpu:
-    #     args.devices = args.devices.replace(' ', '')
-    #     device_ids = args.devices.split(',')
-    #     args.device_ids = [int(id_) for id_ in device_ids]
-    #     args.gpu = args.device_ids[0]
     args.gpu = torch.device("cuda:" + str(args.gpu) if torch.cuda.is_available() else "cpu")
 
     print('Args in experiment:')
@@ -159,6 +155,11 @@ def main():
         args.full = True
     else:
         args.full = False
+
+    if args.flat == 'True':
+        args.flat = True 
+    else:
+        args.flat = False
     
     exp_dict = {
         "Basic": Exp_Basic,
@@ -172,9 +173,14 @@ def main():
     Exp = exp_dict[args.exp]
 
     df = pd.read_feather(os.path.join(args.root_path, args.data_path))
-        
+
+    print(df)
+
     if args.market == 'us':
         df.rename(columns={'PERMNO': 'code'}, inplace=True)
+        df.drop(columns=['return', 'high', 'low',
+       'open', 'close', 'volume', 'amount'], inplace=True)
+        
 
     df.sort_values(by=['code', 'date'], inplace=True)
     date_ls = list(df['date'].unique())
@@ -182,6 +188,7 @@ def main():
 
     save_path = "./backtest/" + args.model
     os.makedirs(save_path, exist_ok=True)
+    print("save_path:", save_path)
 
     if args.is_training:
         for ii in range(args.itr):
@@ -204,10 +211,11 @@ def main():
                 args.distil,
                 args.des, ii)
             
-            os.makedirs(save_path + str(ii + 1), exist_ok=True)
+            os.makedirs(save_path + "/" + str(ii + 1), exist_ok=True)
             performance = {}
             for year in range(args.train_start, args.train_start + args.test_size):
                 # train_year = year
+                args.year = year
                 val_year = year + args.train_size
                 test_year = year + args.train_size + args.val_size
 
@@ -221,11 +229,6 @@ def main():
 
                 # Select stocks with enough test data
                 count = df_test.groupby("code").count()
-                # if not args.full:
-                #     mode_num = count['code'].mode().to_numpy()[0]
-                #     count = count[count['code'] == mode_num]
-                # else:
-                #     count = count[count['code'] >= args.l]
                 count = count[count['date'] > args.seq_len]
                 
                 df_test = df_test[df_test['code'].isin(list(count.index))]
@@ -238,7 +241,7 @@ def main():
                 code_list = df_test['code'].unique()
 
                 use_pretrain = True
-                if year == args.train_start:
+                if year == args.start:
                     use_pretrain = False
 
                 exp = Exp(args, ii, df_train, df_valid, df_test, use_pretrain, setting)
@@ -248,23 +251,43 @@ def main():
                 performance[test_year] = {}
                 account = Backtest(args.cash, topk=args.topk, n_drop=args.turnover, trade_cost=args.fee)
 
-                
-                if args.full:
-                    prediction, label = exp.predict()
-                    df_test = exp.df_test
-                    df_test['pred'] = prediction
-                    for j in tqdm(range(len(test_dates))):
-                        date = test_dates[j]
-                        df_today = df_test[df_test['date'] == date].loc[:, ['code', 'pred', 'date', 'label', 'DlyPrc', 'ShrOut', 'DlyVol', 'SecurityEndDt']]
-                        account.trade_us(df_today, args.full)
-                else:
-                    prediction, label = exp.predict()
-                    for j in tqdm(range(len(test_dates))):
-                        date = test_dates[j]
-                        df_today = df_test[df_test['date'] == date]
-                        df_today = df_today.loc[:, ['code', 'date', 'label', 'DlyPrc', 'ShrOut', 'DlyVol']]
-                        df_pred = pd.DataFrame({'code': code_list, 'pred': prediction[j]})
-                        account.trade_us(df_pred.merge(df_today, on="code", how="left"))
+                print(args.full)
+                if args.market == "us":
+                    if args.full:
+                        prediction, label = exp.predict()
+                        df_test = exp.df_test
+                        df_test['pred'] = prediction
+                        for j in tqdm(range(len(test_dates))):
+                            date = test_dates[j]
+                            df_today = df_test[df_test['date'] == date].loc[:, ['code', 'pred', 'date', 'label', 'DlyPrc', 'ShrOut', 'DlyVol', 'SecurityEndDt']]
+                            account.trade_us(df_today, args.full)
+                    else:
+                        prediction, label = exp.predict()
+                        for j in tqdm(range(len(test_dates))):
+                            date = test_dates[j]
+                            df_today = df_test[df_test['date'] == date]
+                            df_today = df_today.loc[:, ['code', 'date', 'label', 'DlyPrc', 'ShrOut', 'DlyVol']]
+                            df_pred = pd.DataFrame({'code': code_list, 'pred': prediction[j]})
+                            account.trade_us(df_pred.merge(df_today, on="code", how="left"))
+                elif args.market == 'cn':
+                    if args.full:
+                        prediction, label = exp.predict()
+                        df_test = exp.df_test
+                        df_test['pred'] = prediction
+                        account.df = df_test
+                        for j in tqdm(range(len(test_dates))):
+                            date = test_dates[j]
+                            df_today = df_test[df_test['date'] == date].loc[:, ['code', 'pred', 'date', 'return', 'label', 'DlyPrc', 'DlyVol']]
+                            account.trade_cn(df_today, args.full)
+                    else:
+                        prediction, label =  exp.predict()
+                        for j in tqdm(range(len(test_dates))):
+                            date = test_dates[j]
+                            df_today = df_test[df_test['date'] == date]
+                            df_today = df_today.loc[:, ['code', 'date', 'return', 'label', 'DlyPrc', 'DlyVol']]
+                            df_pred = pd.DataFrame({'code': code_list, 'pred': prediction[j]})
+                            account.trade_cn(df_pred.merge(df_today, on="code", how="left"))
+
 
                 torch.cuda.empty_cache()
 
@@ -280,51 +303,23 @@ def main():
                 performance[test_year]['Loss'] = float(np.mean((label - prediction) ** 2))
                 performance[test_year]['r2'] = float(r2(prediction.reshape(-1), label.reshape(-1)))
 
-                with open(save_path + str(ii+1) + "/" + str(test_year) + '.pkl', 'wb') as file:
+                print(performance)
+
+                with open(save_path + "/" + str(ii+1) + "/" + str(test_year) + '.pkl', 'wb') as file:
                     pickle.dump(account, file)
 
-                a=3/0
-            print(performance)
 
-            with open(save_path + str(ii+1) + "/performance.json" , 'w') as file:
-                json.dump(performance, file)
-
-            # exp = Exp(args)  # set experiments
-            # print('>>>>>>>start training : {}>>>>>>>>>>>>>>>>>>>>>>>>>>'.format(setting))
-            # exp.train(setting)
-
-            # print('>>>>>>>testing : {}<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<'.format(setting))
-            # exp.test(setting)
-
-            # if args.do_predict:
-            #     print('>>>>>>>predicting : {}<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<'.format(setting))
-            #     exp.predict(setting, True)
-
-            # torch.cuda.empty_cache()
-    else:
-        ii = 0
-        setting = '{}_{}_{}_ft{}_sl{}_ll{}_pl{}_dm{}_nh{}_el{}_dl{}_df{}_fc{}_eb{}_dt{}_{}_{}'.format(args.model_id,
-                                                                                                      args.model,
-                                                                                                      args.data,
-                                                                                                      args.features,
-                                                                                                      args.seq_len,
-                                                                                                      args.label_len,
-                                                                                                      args.pred_len,
-                                                                                                      args.d_model,
-                                                                                                      args.n_heads,
-                                                                                                      args.e_layers,
-                                                                                                      args.d_layers,
-                                                                                                      args.d_ff,
-                                                                                                      args.factor,
-                                                                                                      args.embed,
-                                                                                                      args.distil,
-                                                                                                      args.des, ii)
-
-        exp = Exp(args)  # set experiments
-        print('>>>>>>>testing : {}<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<'.format(setting))
-        exp.test(setting, test=1)
-        torch.cuda.empty_cache()
-
+                try:
+                    with open(save_path + "/" + str(ii+1) + "/performance.json", 'r') as file:
+                        data = json.load(file)
+                except FileNotFoundError:
+                    data = {}
+                
+                data[test_year] = performance[test_year]
+                    
+                with open(save_path + "/" + str(ii+1) + "/performance.json" , 'w') as file:
+                    json.dump(data, file)
+                
 
 if __name__ == "__main__":
     main()

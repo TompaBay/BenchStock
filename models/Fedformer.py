@@ -1,3 +1,6 @@
+import math
+import numpy as np
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -7,11 +10,6 @@ from layers.FourierCorrelation import FourierBlock, FourierCrossAttention
 from layers.MultiWaveletCorrelation import MultiWaveletCross, MultiWaveletTransform
 from layers.SelfAttention_Family import FullAttention, ProbAttention
 from layers.Autoformer_EncDec import Encoder, Decoder, EncoderLayer, DecoderLayer, my_Layernorm, series_decomp, series_decomp_multi
-import math
-import numpy as np
-
-
-device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 
 class Model(nn.Module):
@@ -121,7 +119,6 @@ class Model(nn.Module):
                 enc_self_mask=None, dec_self_mask=None, dec_enc_mask=None):
         # decomp init
         mean = torch.mean(x_enc, dim=1).unsqueeze(1).repeat(1, self.pred_len, 1)
-        zeros = torch.zeros([x_dec.shape[0], self.pred_len, x_dec.shape[2]]).to(device)  # cuda()
         seasonal_init, trend_init = self.decomp(x_enc)
         # decoder input
         trend_init = torch.cat([trend_init[:, -self.label_len:, :], mean], dim=1)
@@ -140,46 +137,3 @@ class Model(nn.Module):
             return self.final(dec_out[:, -self.pred_len:, :]), attns
         else:
             return self.final(dec_out[:, -self.pred_len:, :])  # [B, L, D]
-
-
-# if __name__ == '__main__':
-#     class Configs(object):
-#         ab = 0
-#         modes = 32
-#         mode_select = 'random'
-#         # version = 'Fourier'
-#         version = 'Wavelets'
-#         moving_avg = [12, 24]
-#         L = 1
-#         base = 'legendre'
-#         cross_activation = 'tanh'
-#         seq_len = 96
-#         label_len = 48
-#         pred_len = 96
-#         output_attention = True
-#         enc_in = 7
-#         dec_in = 7
-#         d_model = 16
-#         embed = 'timeF'
-#         dropout = 0.05
-#         freq = 'h'
-#         factor = 1
-#         n_heads = 8
-#         d_ff = 16
-#         e_layers = 2
-#         d_layers = 1
-#         c_out = 7
-#         activation = 'gelu'
-#         wavelet = 0
-
-#     configs = Configs()
-#     model = Model(configs)
-
-#     print('parameter number is {}'.format(sum(p.numel() for p in model.parameters())))
-#     enc = torch.randn([3, configs.seq_len, 7])
-#     enc_mark = torch.randn([3, configs.seq_len, 4])
-
-#     dec = torch.randn([3, configs.seq_len//2+configs.pred_len, 7])
-#     dec_mark = torch.randn([3, configs.seq_len//2+configs.pred_len, 4])
-#     out = model.forward(enc, enc_mark, dec, dec_mark)
-#     print(out)

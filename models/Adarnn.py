@@ -2,23 +2,17 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-
-from utils.loss.adv_loss import *
-from utils.loss.coral import *
-from utils.loss.kl_js import *
-from utils.loss.mmd import *
-from utils.loss.mutual_info import *
-from utils.loss.cosine import *
-from utils.loss.pair_dist import *
+from utils.loss import adv_loss, coral, kl_js, mmd, mutual_info, cosine, pair_dist
 
 
 class TransferLoss(object):
-    def __init__(self, loss_type='cosine', input_dim=512):
+    def __init__(self, loss_type='cosine', input_dim=512, device=torch.device("cuda" if torch.cuda.is_available() else "cpu")):
         """
         Supported loss_type: mmd(mmd_lin), mmd_rbf, coral, cosine, kl, js, mine, adv
         """
         self.loss_type = loss_type
         self.input_dim = input_dim
+        self.device = device
 
     def compute(self, X, Y):
         """Compute adaptation loss
@@ -34,24 +28,24 @@ class TransferLoss(object):
             mmdloss = mmd.MMD_loss(kernel_type='linear')
             loss = mmdloss(X, Y)
         elif self.loss_type == 'coral':
-            loss = CORAL(X, Y)
+            loss = coral.CORAL(X, Y)
         elif self.loss_type == 'cosine' or self.loss_type == 'cos':
-            loss = 1 - cosine(X, Y)
+            loss = 1 - cosine.cosine(X, Y)
         elif self.loss_type == 'kl':
-            loss = kl_div(X, Y)
+            loss = kl_js.kl_div(X, Y)
         elif self.loss_type == 'js':
-            loss = js(X, Y)
+            loss = kl_js.js(X, Y)
         elif self.loss_type == 'mine':
-            mine_model = Mine_estimator(
+            mine_model = mutual_info.Mine_estimator(
                 input_dim=self.input_dim, hidden_dim=60).cuda()
             loss = mine_model(X, Y)
         elif self.loss_type == 'adv':
-            loss = adv(X, Y, input_dim=self.input_dim, hidden_dim=32)
+            loss = adv_loss.adv(X, Y, input_dim=self.input_dim, hidden_dim=32, device=self.device)
         elif self.loss_type == 'mmd_rbf':
-            mmdloss = MMD_loss(kernel_type='rbf')
+            mmdloss = mmd.MMD_loss(kernel_type='rbf')
             loss = mmdloss(X, Y)
         elif self.loss_type == 'pairwise':
-            pair_mat = pairwise_dist(X, Y)
+            pair_mat = pair_dist.pairwise_dist(X, Y)
             import torch
             loss = torch.norm(pair_mat)
 
@@ -62,7 +56,6 @@ class TransferLoss(object):
 
 class Model(nn.Module):
     def __init__(self, args):
-                #  device, use_bottleneck=False, bottleneck_width=256, n_input=128, n_hiddens=[64, 64], n_output=6, dropout=0.0, len_seq=9,  model_type='AdaRNN', trans_loss='mmd'):
         super(Model, self).__init__()
         self.args = args
         self.use_bottleneck = args.use_bottleneck
@@ -81,7 +74,7 @@ class Model(nn.Module):
         for hidden in self.hiddens:
             rnn = nn.GRU(
                 input_size=in_size,
-                num_layers=1,
+                num_layers=self.num_layers,
                 hidden_size=hidden,
                 batch_first=True,
                 dropout=args.dropout
@@ -90,7 +83,7 @@ class Model(nn.Module):
             in_size = hidden
         self.features = nn.Sequential(*features)
 
-        if args.use_bottleneck == True:  # finance
+        if args.use_bottleneck == True: 
             self.bottleneck = nn.Sequential(
                 nn.Linear(self.hiddens[-1], self.bottleneck_width),
                 nn.Linear(self.bottleneck_width, self.bottleneck_width),
@@ -141,7 +134,7 @@ class Model(nn.Module):
         loss_transfer = torch.zeros((1,)).to(self.device)
         for i in range(len(out_list_s)):
             criterion_transder = TransferLoss(
-                loss_type=self.trans_loss, input_dim=out_list_s[i].shape[2])
+                loss_type=self.trans_loss, input_dim=out_list_s[i].shape[2], device=self.device)
             h_start = 0 
             for j in range(h_start, self.len_seq, 1):
                 i_start = j - len_win if j - len_win >= 0 else 0
@@ -207,7 +200,7 @@ class Model(nn.Module):
         dist_mat = torch.zeros(self.num_layers, self.len_seq).to(self.device)
         for i in range(len(out_list_s)):
             criterion_transder = TransferLoss(
-                loss_type=self.trans_loss, input_dim=out_list_s[i].shape[2])
+                loss_type=self.trans_loss, input_dim=out_list_s[i].shape[2], device=self.device)
             for j in range(self.len_seq):
                 loss_trans = criterion_transder.compute(
                     out_list_s[i][:, j, :], out_list_t[i][:, j, :])

@@ -28,8 +28,6 @@ class Backtest():
             df['share'] = cash_per_stock // (df['DlyPrc'] + self.trade_cost)
             df = df[df['share'] < df['DlyVol']]
             self.position = df.iloc[-self.topk:]
-            # self.position['share'] = cash_per_stock // (self.position['DlyPrc'] + self.trade_cost)
-            # self.position = self.position[self.position['share'] < self.position['DlyVol']]
             self.position['value'] = self.position['share'] * self.position['DlyPrc']
             self.position.fillna(0, inplace=True)
             self.values.append(self.cash)

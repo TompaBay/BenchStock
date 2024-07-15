@@ -13,9 +13,6 @@ class GRULayer(nn.Module):
         self.hidden_size = hidden_size
         
         # Reset gate weights
-        # self.Wr = nn.Parameter(torch.Tensor(hidden_size, input_size))
-        # self.Ur = nn.Parameter(torch.Tensor(hidden_size, hidden_size))
-        # self.br = nn.Parameter(torch.Tensor(hidden_size, 1))
         self.Wr = nn.Linear(hidden_size, hidden_size)
         self.Ur = nn.Linear(input_size, hidden_size)
         self.br = nn.Parameter(torch.Tensor(1, hidden_size))
@@ -109,25 +106,13 @@ class TimeAdaptiveAttention(nn.Module):
         values = self.linear_v(input_seq).view(batch_size, seq_len, self.heads, self.df).transpose(1, 2)
         query = self.linear_q(input_seq).view(batch_size, seq_len, self.heads, self.df).transpose(1, 2)
 
-        # # Compute cross patterns
-        # cross_query = self.w_q_cross(input_seq)
-        # cross_keys = self.w_k_cross(input_seq)
-        # cross_values = self.w_v_cross(input_seq)
-
-        # cross_q = cross_query.view(batch_size, seq_len, self.heads, self.df)
-        # cross_k = cross_keys.view(batch_size, seq_len, self.heads, self.df)
-        # cross_v = cross_values.view(batch_size, seq_len, self.heads, self.df)
-
         # Compute attention scores
         attention_scores = torch.matmul(query, keys.transpose(-2, -1))
         attention_scores *= z_hat.unsqueeze(0) / (self.df ** 0.5)
         attention_weights = F.relu(F.softmax(attention_scores, dim=-1))
 
     
-        # # Apply element-wise product with cross patterns
-        # cross_product = cross_q * cross_k
-        # cross_product *= z_hat.unsqueeze(0) / (self.df ** 0.5)
-        # cross_attention = F.relu(cross_product) * attention_weights.unsqueeze(-2)
+        # Apply element-wise product with cross patterns
         cross_values = torch.matmul(attention_weights, values).reshape(batch_size, seq_len, -1)
 
         return cross_values
@@ -206,14 +191,13 @@ class FeedForwardNetwork(nn.Module):
         return x
 
 
-
 class Model(nn.Module):
     def __init__(self, args):
-                #  in_dim, hid_dim, out_dim, num_layer, ws, device, head=6):
         super(Model, self).__init__()
         self.in_dim = args.enc_in
-        self.out_dim = args.d_model
-        # self.device = device
+        self.hid_dim = args.d_model
+        self.out_dim = args.c_out
+        self.device = args.gpu
         self.embedding = nn.Linear(self.in_dim, self.hid_dim)
         self.graph_layers = nn.ModuleList()
         
@@ -224,15 +208,15 @@ class Model(nn.Module):
             self.graph_layers.append(AggregationLayer(self.hid_dim, self.hid_dim))
             self.graph_layers.append(GRULayer(self.hid_dim, self.hid_dim))
         
-        self.Lit_layers = []
-        df = int(self.hid_dim // args.head)
-        for w in ws:
-            self.Lit_layers.append(LocalInteractionLayer(hid_dim, hid_dim, w, df, head).to(device))
-            self.Lit_layers.append(TimeAdaptiveAttention(hid_dim, head, df).to(device))
-            self.Lit_layers.append(FeedForwardNetwork(hid_dim, hid_dim).to(device))
+        self.Lit_layers = nn.ModuleList()
+        df = int(self.hid_dim // args.n_heads)
+        for w in args.ws:
+            self.Lit_layers.append(LocalInteractionLayer(self.hid_dim, self.hid_dim, w, df, args.n_heads))
+            self.Lit_layers.append(TimeAdaptiveAttention(self.hid_dim, args.n_heads, df))
+            self.Lit_layers.append(FeedForwardNetwork(self.hid_dim, self.hid_dim))
 
-        self.norm = nn.LayerNorm(hid_dim)
-        self.linear = nn.Linear(hid_dim * len(ws), out_dim)
+        self.norm = nn.LayerNorm(self.hid_dim)
+        self.linear = nn.Linear(self.hid_dim * len(args.ws), self.out_dim)
         self.leaky = nn.LeakyReLU(0.1)
         self.sigmoid = nn.Sigmoid()
     

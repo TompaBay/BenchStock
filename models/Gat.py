@@ -4,7 +4,6 @@ import torch.nn as nn
 
 class Model(nn.Module):
     def __init__(self, args):
-        # d_feat=6, hidden_size=64, num_layers=1):
         super(Model, self).__init__()
         self.args = args
         self.hidden_size = args.d_model

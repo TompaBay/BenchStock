@@ -57,7 +57,6 @@ class Exp_Basic(Exp):
             
 
         self.train_feature, self.train_label = self.process_data(df_train)
-        # self.valid_feature, self.valid_label = self.process_data(df_valid)
         self.test_feature, self.test_label, self.df_test = self.process_data(df_test, test=True)
         self.model = self._build_model()
 
