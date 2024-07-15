@@ -1,0 +1,39 @@
+python -u run.py \
+  --is_training 1 \
+  --gpu 1 \
+  --start 2000 \
+  --train_start 2000\
+  --train_size 3 \
+  --val_size 2 \
+  --test_size 30 \
+  --test_end_year 2023\
+  --root_path ./dataset/ \
+  --data_path us_con.feather \
+  --full True\
+  --model_id us_64_1 \
+  --model Crossformer \
+  --data custom \
+  --exp Main\
+  --market us \
+  --features d \
+  --seq_len 64 \
+  --label_len 32 \
+  --train_label_len 1 \
+  --pred_len 1 \
+  --batch_size 256\
+  --train_epochs 10\
+  --e_layers 1 \
+  --d_layers 1 \
+  --n_heads 1 \
+  --d_model 32 \
+  --factor 3 \
+  --enc_in 7 \
+  --dec_in 7 \
+  --c_out 1 \
+  --win_size 2 \
+  --seg_len 2 \
+  --final_out 1 \
+  --des 'Exp' \
+  --itr 1
+
+

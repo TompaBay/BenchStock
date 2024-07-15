@@ -2,7 +2,14 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from utils.loss import adv_loss, coral, kl_js, mmd, mutual_info, cosine, pair_dist
+
+from utils.loss.adv_loss import *
+from utils.loss.coral import *
+from utils.loss.kl_js import *
+from utils.loss.mmd import *
+from utils.loss.mutual_info import *
+from utils.loss.cosine import *
+from utils.loss.pair_dist import *
 
 
 class TransferLoss(object):
@@ -28,24 +35,24 @@ class TransferLoss(object):
             mmdloss = mmd.MMD_loss(kernel_type='linear')
             loss = mmdloss(X, Y)
         elif self.loss_type == 'coral':
-            loss = coral.CORAL(X, Y)
+            loss = CORAL(X, Y)
         elif self.loss_type == 'cosine' or self.loss_type == 'cos':
-            loss = 1 - cosine.cosine(X, Y)
+            loss = 1 - cosine(X, Y)
         elif self.loss_type == 'kl':
-            loss = kl_js.kl_div(X, Y)
+            loss = kl_div(X, Y)
         elif self.loss_type == 'js':
-            loss = kl_js.js(X, Y)
+            loss = js(X, Y)
         elif self.loss_type == 'mine':
-            mine_model = mutual_info.Mine_estimator(
+            mine_model = Mine_estimator(
                 input_dim=self.input_dim, hidden_dim=60).cuda()
             loss = mine_model(X, Y)
         elif self.loss_type == 'adv':
-            loss = adv_loss.adv(X, Y, input_dim=self.input_dim, hidden_dim=32, device=self.device)
+            loss = adv(X, Y, input_dim=self.input_dim, hidden_dim=32, device=self.device)
         elif self.loss_type == 'mmd_rbf':
-            mmdloss = mmd.MMD_loss(kernel_type='rbf')
+            mmdloss = MMD_loss(kernel_type='rbf')
             loss = mmdloss(X, Y)
         elif self.loss_type == 'pairwise':
-            pair_mat = pair_dist.pairwise_dist(X, Y)
+            pair_mat = pairwise_dist(X, Y)
             import torch
             loss = torch.norm(pair_mat)
 
@@ -56,6 +63,7 @@ class TransferLoss(object):
 
 class Model(nn.Module):
     def __init__(self, args):
+                #  device, use_bottleneck=False, bottleneck_width=256, n_input=128, n_hiddens=[64, 64], n_output=6, dropout=0.0, len_seq=9,  model_type='AdaRNN', trans_loss='mmd'):
         super(Model, self).__init__()
         self.args = args
         self.use_bottleneck = args.use_bottleneck
@@ -74,7 +82,7 @@ class Model(nn.Module):
         for hidden in self.hiddens:
             rnn = nn.GRU(
                 input_size=in_size,
-                num_layers=self.num_layers,
+                num_layers=1,
                 hidden_size=hidden,
                 batch_first=True,
                 dropout=args.dropout
@@ -83,7 +91,7 @@ class Model(nn.Module):
             in_size = hidden
         self.features = nn.Sequential(*features)
 
-        if args.use_bottleneck == True: 
+        if args.use_bottleneck == True:  # finance
             self.bottleneck = nn.Sequential(
                 nn.Linear(self.hiddens[-1], self.bottleneck_width),
                 nn.Linear(self.bottleneck_width, self.bottleneck_width),
@@ -192,12 +200,16 @@ class Model(nn.Module):
         out_list_all = out[1]
         out_list_s, out_list_t = self.get_features(out_list_all)
         loss_transfer = torch.zeros((1,)).to(self.device)
+
         if weight_mat is None:
             weight = (1.0 / self.len_seq *
-                      torch.ones(self.num_layers, self.len_seq)).to(self.device)
+                      torch.ones(len(out_list_s), self.len_seq)).to(self.device)
         else:
             weight = weight_mat
-        dist_mat = torch.zeros(self.num_layers, self.len_seq).to(self.device)
+
+        # dist_mat = torch.zeros(self.num_layers, self.len_seq).to(self.device)
+        dist_mat = torch.zeros(len(out_list_s), self.len_seq).to(self.device)
+
         for i in range(len(out_list_s)):
             criterion_transder = TransferLoss(
                 loss_type=self.trans_loss, input_dim=out_list_s[i].shape[2], device=self.device)
@@ -205,6 +217,7 @@ class Model(nn.Module):
                 loss_trans = criterion_transder.compute(
                     out_list_s[i][:, j, :], out_list_t[i][:, j, :])
                 loss_transfer = loss_transfer + weight[i, j] * loss_trans
+                
                 dist_mat[i, j] = loss_trans
         return fc_out, loss_transfer, dist_mat, weight
 

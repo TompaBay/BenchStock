@@ -22,7 +22,7 @@ def get_frequency_modes(seq_len, modes=64, mode_select_method='random'):
 
 # ########## fourier layer #############
 class FourierBlock(nn.Module):
-    def __init__(self, in_channels, out_channels, seq_len, modes=0, mode_select_method='random'):
+    def __init__(self, in_channels, out_channels, n_head, seq_len, modes=0, mode_select_method='random'):
         super(FourierBlock, self).__init__()
         print('fourier enhanced block used!')
         """
@@ -35,7 +35,7 @@ class FourierBlock(nn.Module):
 
         self.scale = (1 / (in_channels * out_channels))
         self.weights1 = nn.Parameter(
-            self.scale * torch.rand(8, in_channels // 8, out_channels // 8, len(self.index), dtype=torch.cfloat))
+            self.scale * torch.rand(n_head, in_channels // n_head, out_channels // n_head, len(self.index), dtype=torch.cfloat))
 
     # Complex multiplication
     def compl_mul1d(self, input, weights):
@@ -50,6 +50,7 @@ class FourierBlock(nn.Module):
         x_ft = torch.fft.rfft(x, dim=-1)
         # Perform Fourier neural operations
         out_ft = torch.zeros(B, H, E, L // 2 + 1, device=x.device, dtype=torch.cfloat)
+
         for wi, i in enumerate(self.index):
             out_ft[:, :, :, wi] = self.compl_mul1d(x_ft[:, :, :, i], self.weights1[:, :, :, wi])
         # Return to time domain
@@ -59,7 +60,7 @@ class FourierBlock(nn.Module):
 
 # ########## Fourier Cross Former ####################
 class FourierCrossAttention(nn.Module):
-    def __init__(self, in_channels, out_channels, seq_len_q, seq_len_kv, modes=64, mode_select_method='random',
+    def __init__(self, in_channels, out_channels, n_head, seq_len_q, seq_len_kv, modes=64, mode_select_method='random',
                  activation='tanh', policy=0):
         super(FourierCrossAttention, self).__init__()
         print(' fourier enhanced cross attention used!')
@@ -78,7 +79,7 @@ class FourierCrossAttention(nn.Module):
 
         self.scale = (1 / (in_channels * out_channels))
         self.weights1 = nn.Parameter(
-            self.scale * torch.rand(8, in_channels // 8, out_channels // 8, len(self.index_q), dtype=torch.cfloat))
+            self.scale * torch.rand(n_head, in_channels // n_head, out_channels // n_head, len(self.index_q), dtype=torch.cfloat))
 
     # Complex multiplication
     def compl_mul1d(self, input, weights):

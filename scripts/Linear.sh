@@ -1,0 +1,25 @@
+python -u run.py \
+  --is_training 1 \
+  --gpu 5 \
+  --start 1979 \
+  --train_start 1979\
+  --train_size 10 \
+  --val_size 5 \
+  --test_size 6 \
+  --test_end_year 1999\
+  --root_path ./dataset/ \
+  --data_path us1975-2000.feather \
+  --full True\
+  --model_id us_64_1 \
+  --model Linear \
+  --exp Basic\
+  --data custom \
+  --market us \
+  --features D \
+  --train_epochs 1 \
+  --pred_len 1 \
+  --train_label_len 1\
+  --c_out 1 \
+  --flat True \
+  --des 'Exp' \
+  --itr 1

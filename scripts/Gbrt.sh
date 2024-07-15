@@ -1,0 +1,27 @@
+python -u run.py \
+  --is_training 1 \
+  --gpu 5 \
+  --start 2000 \
+  --train_start 2000 \
+  --train_size 3 \
+  --val_size 2 \
+  --test_size 30 \
+  --test_end_year 2023\
+  --root_path ./dataset/ \
+  --data_path us_con.feather \
+  --full True\
+  --model_id us_64_1 \
+  --model Gbrt \
+  --exp Basic\
+  --data custom \
+  --market us \
+  --features D \
+  --train_epochs 10 \
+  --pred_len 1 \
+  --train_label_len 1\
+  --max_iter 50 \
+  --max_depth 10 \
+  --c_out 1 \
+  --flat True \
+  --des 'Exp' \
+  --itr 1

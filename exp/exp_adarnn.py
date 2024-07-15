@@ -69,6 +69,34 @@ class Exp_Adarnn(Exp):
         self.df_train = df_train
         self.df_valid = df_valid
         self.df_test = df_test
+            
+        # dates = df_train['date'].unique()
+        # dates.sort()
+        # date_splits = np.array_split(np.array(dates), self.args.n_domains)
+
+        # train_list = [df_train[(df_train['date'] <= date[-1]) & (df_train['date'] >= date[0])] for date in date_splits]
+        # train_list = [self.process_data(train) for train in train_list]
+        # input_dim = train_list[0][0][0].shape[1]
+        # valid_feature, valid_label = self.process_data(df_valid)
+
+        # train_list = [TrainDataset(train_feature, train_label) for (train_feature, train_label) in train_list]
+        # train_args = dict(shuffle=True, batch_size=self.args.batch_size, num_workers=8)
+        # self.train_loader_list = [DataLoader(train, **train_args) for train in train_list]
+
+        # val = TrainDataset(valid_feature, valid_label)
+        # val_args = dict(shuffle=False, batch_size=self.args.batch_size, num_workers=8)
+        # self.val_loader = DataLoader(val, **val_args)
+
+        # # if not full:
+        # # test_feature, test_label = self.process_test_data(df_test)
+        # # test = TrainDataset(test_feature, test_label)
+        # # test_args = dict(shuffle=False, batch_size=1, num_workers=8)
+        # # self.test_loader = DataLoader(test, **test_args)
+        # # else:
+        # test_feature, test_label, self.df_test = self.process_data(df_test, test=True)
+        # test = TrainDataset(test_feature, test_label)
+        # test_args = dict(shuffle=False, batch_size=self.args.batch_size, num_workers=8)
+        # self.test_loader = DataLoader(test, **test_args)
 
         self.model = self._build_model()
         self.criterion = nn.MSELoss()
@@ -84,6 +112,10 @@ class Exp_Adarnn(Exp):
                 nn.init.uniform_(p)
 
         if use_pretrain:
+            # if self.full:
+            #     checkpoint = torch.load( './' + file_name + '_full_us_model.pth')
+            # else:
+
             checkpoint = torch.load(self.path + '/checkpoint.pth') 
             self.model.load_state_dict(checkpoint['model_state_dict'])
             self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
@@ -96,12 +128,19 @@ class Exp_Adarnn(Exp):
         }
 
         model = model_dict[self.args.model].Model(self.args).float()
+
+        # if self.args.use_multi_gpu and self.args.use_gpu:
+        #     model = nn.DataParallel(model, device_ids=self.args.device_ids)
         model.to(self.args.gpu)
 
         print("build model")
         print(self.args.gpu)
     
         return model
+
+    # def _get_data(self, flag):
+    #     data_set, data_loader = data_provider(self.args, flag)
+    #     return data_set, data_loader
     
     
     def process_data(self, df, test=False):
@@ -135,8 +174,13 @@ class Exp_Adarnn(Exp):
 
 
     def transform_type(self, init_weight):
-        weight = torch.ones(self.args.e_layers, self.args.seq_len).to(self.args.gpu)
-        for i in range(self.args.e_layers):
+        # weight = torch.ones(self.args.e_layers, self.args.seq_len).to(self.args.gpu)
+        # for i in range(self.args.e_layers):
+        #     for j in range(self.args.seq_len):
+        #         weight[i, j] = init_weight[i][j].item()
+
+        weight = torch.ones(len(init_weight), self.args.seq_len).to(self.args.gpu)
+        for i in range(len(init_weight)):
             for j in range(self.args.seq_len):
                 weight[i, j] = init_weight[i][j].item()
         return weight
@@ -147,11 +191,16 @@ class Exp_Adarnn(Exp):
         if self.args.use_amp:
             self.scaler = torch.cuda.amp.GradScaler()
 
+        initial_memory = torch.cuda.memory_allocated()
+        print("initial_memory:", initial_memory)
         dist_mat, weight_mat = None, None
         for i in range(self.args.train_epochs):
             print('Epoch', i + 1)
             loss, loss1, weight_mat, dist_mat = self.train_epoch(i, dist_mat, weight_mat)
             val_loss, val_r2 = self.vali()
+
+            current_memory = torch.cuda.memory_allocated()
+            print("current_memory:", current_memory)
 
             if val_r2 > best_r2:
                 checkpoint = {
@@ -161,6 +210,10 @@ class Exp_Adarnn(Exp):
                              }
                 
                 torch.save(checkpoint, self.path + '/checkpoint.pth')
+                # if self.full:
+                #     torch.save(checkpoint,  './' + file_name + '_full_us_model.pth')
+                # else:
+                #     torch.save(checkpoint,  './' + file_name + '_us_model.pth') 
 
             self.scheduler.step()
 
@@ -172,6 +225,9 @@ class Exp_Adarnn(Exp):
         loss_all = []
         loss_1_all = []
 
+        loss_ls = []
+        loss_1_ls = []
+
         dates = self.df_train['date'].unique()
         dates.sort()
 
@@ -181,6 +237,15 @@ class Exp_Adarnn(Exp):
         for i in range(len(years) - 1):
             start = max(bisect.bisect_left(dates, str(years[i]) + "-01-01") - self.args.seq_len, 0)
             df = self.df_train[(self.df_train['date'] >= dates[start]) & (self.df_train['date'] < (str(years[i+1]) + "-01-01"))]
+
+            print("after dataloader")
+            pid = psutil.Process()
+
+            # Get memory usage statistics
+            memory_info = pid.memory_info()
+
+            memory_usage_gb = memory_info.rss / (1024 * 1024 * 1024)
+            print("Memory usage (GB):", memory_usage_gb)
 
             dates = df['date'].unique()
             dates.sort()
@@ -255,15 +320,21 @@ class Exp_Adarnn(Exp):
             loss = np.array(loss_all).mean(axis=0)
             loss_l1 = np.array(loss_1_all).mean()
         
+            loss_ls.append(loss)
+            loss_1_ls.append(loss_l1)
         
+        loss = np.array(loss_ls).mean()
+        loss_l1 = np.array(loss_1_ls).mean()
 
         if epoch >= self.args.pre_epoch:
             if epoch > self.args.pre_epoch:
                 weight_mat = self.model.update_weight_Boosting(
                     weight_mat, dist_old, dist_mat)
+            
             return loss, loss_l1, weight_mat, dist_mat
         else:
             weight_mat = self.transform_type(out_weight_list)
+
             return loss, loss_l1, weight_mat, None
         
     
@@ -272,34 +343,90 @@ class Exp_Adarnn(Exp):
         val_loss = 0
         prediction = []
         label = []
+        loss_ls = []
 
-        for (inputs, targets) in tqdm(self.val_loader):
-            inputs, targets = inputs.to(self.args.gpu), targets.to(self.args.gpu)
-            
-            output = self.model.predict(inputs)
-            loss = self.criterion(output, targets)
-            val_loss += loss.item()
+        dates = self.df_valid['date'].unique()
+        dates.sort()
 
-            prediction.extend(list(output.detach().cpu().numpy().reshape(-1)))
-            label.extend(list(targets.detach().cpu().numpy().reshape(-1)))
+        years = np.arange(self.args.year + self.args.train_size, self.args.year + self.args.train_size + self.args.val_size + 1)
+        
+        print("Valid")
+        for i in range(len(years) - 1):
+            val_loss = 0
+            start = max(bisect.bisect_left(dates, str(years[i]) + "-01-01") - self.args.seq_len, 0)
+            df = self.df_valid[(self.df_valid['date'] >= dates[start]) & (self.df_valid['date'] < (str(years[i+1]) + "-01-01"))]
 
-            del inputs
-            del targets
-            del loss
+            valid_feature, valid_label = self.process_data(df)
 
-        val_loss /= len(self.val_loader)
+            pid = psutil.Process()
+
+            # Get memory usage statistics
+            memory_info = pid.memory_info()
+
+            memory_usage_gb = memory_info.rss / (1024 * 1024 * 1024)
+            print("after process")
+            print("Memory usage (GB):", memory_usage_gb)
+
+            valid = TrainDataset(valid_feature, valid_label)
+            valid_args = dict(shuffle=False, batch_size=self.args.batch_size, num_workers=8)
+            self.val_loader = DataLoader(valid, **valid_args)
+
+            print("after dataloader")
+            pid = psutil.Process()
+
+            # Get memory usage statistics
+            memory_info = pid.memory_info()
+
+            memory_usage_gb = memory_info.rss / (1024 * 1024 * 1024)
+            print("Memory usage (GB):", memory_usage_gb)
+
+            for (inputs, targets) in tqdm(self.val_loader):
+                inputs, targets = inputs.to(self.args.gpu), targets.to(self.args.gpu)
+                
+                output = self.model.predict(inputs)
+                loss = self.criterion(output, targets)
+                val_loss += loss.item()
+
+                prediction.extend(list(output.detach().cpu().numpy().reshape(-1)))
+                label.extend(list(targets.detach().cpu().numpy().reshape(-1)))
+
+                del inputs
+                del targets
+                del loss
+
+            val_loss /= len(self.val_loader)
+            loss_ls.append(val_loss)
+
+        val_loss = np.mean(np.array(loss_ls))
         val_r2 = r2(prediction, label)
         print("Valid r2:"+ str(val_r2) + "  Valid loss:" + str(val_loss))
+
+        del valid_feature
+        del valid_label
+        del valid
+        del self.val_loader
+        del prediction
+        del label
+
         return val_loss, val_r2
 
 
     def predict(self):
+        # if self.args.data == "full":
+        #     checkpoint = torch.load( './' + file_name + '_full_us_model.pth')
+        # else:
+        #     checkpoint = torch.load('./' + file_name + '_us_model.pth') 
         checkpoint = torch.load(self.path + '/checkpoint.pth')
         self.model.load_state_dict(checkpoint['model_state_dict'])
         self.model.eval()
 
         prediction = []
         label = []
+
+        test_feature, test_label, self.df_test = self.process_data(self.df_test, test=True)
+        test = TrainDataset(test_feature, test_label)
+        test_args = dict(shuffle=False, batch_size=self.args.batch_size, num_workers=8)
+        self.test_loader = DataLoader(test, **test_args)
 
         for (inputs, targets) in tqdm(self.test_loader):
             inputs, targets = inputs.to(self.args.gpu), targets.to(self.args.gpu)

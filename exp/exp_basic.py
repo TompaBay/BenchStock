@@ -57,6 +57,19 @@ class Exp_Basic(Exp):
             
 
         self.train_feature, self.train_label = self.process_data(df_train)
+
+        import psutil
+        pid = psutil.Process()
+
+        # Get memory usage statistics
+        memory_info = pid.memory_info()
+
+        memory_usage_gb = memory_info.rss / (1024 * 1024 * 1024)
+        print("after process")
+        print("Memory usage (GB):", memory_usage_gb)
+        a=3/0
+
+        # self.valid_feature, self.valid_label = self.process_data(df_valid)
         self.test_feature, self.test_label, self.df_test = self.process_data(df_test, test=True)
         self.model = self._build_model()
 

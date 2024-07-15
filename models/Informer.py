@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 from layers.Transformer_EncDec import Decoder, DecoderLayer, Encoder, EncoderLayer, ConvLayer
-from layers.SelfAttention_Family import ProbAttention, AttentionLayer
+from layers.SelfAttention_Family import ProbAttention, FullAttention, AttentionLayer
 from layers.Embed import DataEmbedding
 
 
@@ -45,11 +45,17 @@ class Model(nn.Module):
         self.decoder = Decoder(
             [
                 DecoderLayer(
+                    # AttentionLayer(
+                    #     ProbAttention(True, configs.factor, attention_dropout=configs.dropout, output_attention=False),
+                    #     configs.d_model, configs.n_heads),
+                    # AttentionLayer(
+                    #     ProbAttention(False, configs.factor, attention_dropout=configs.dropout, output_attention=False),
+                    #     configs.d_model, configs.n_heads),
                     AttentionLayer(
                         ProbAttention(True, configs.factor, attention_dropout=configs.dropout, output_attention=False),
                         configs.d_model, configs.n_heads),
                     AttentionLayer(
-                        ProbAttention(False, configs.factor, attention_dropout=configs.dropout, output_attention=False),
+                        FullAttention(False, configs.factor, attention_dropout=configs.dropout, output_attention=False),
                         configs.d_model, configs.n_heads),
                     configs.d_model,
                     configs.d_ff,

@@ -62,6 +62,31 @@ class Exp_Main(Exp):
         self.df_valid = df_valid
         self.df_test = df_test
 
+        # train_feature, train_label = self.process_data(df_train)
+        # valid_feature, valid_label = self.process_data(df_valid)
+
+        # train = TrainDataset(train_feature, train_label)
+        # train_args = dict(shuffle=True, batch_size=self.args.batch_size, num_workers=2)
+        # self.train_loader = DataLoader(train, **train_args)
+
+        # val = TrainDataset(valid_feature, valid_label)
+        # val_args = dict(shuffle=False, batch_size=self.args.batch_size, num_workers=2)
+        # self.val_loader = DataLoader(val, **val_args)
+
+        # if not full:
+        # test_feature, test_label = self.process_test_data(df_test)
+        # test = TrainDataset(test_feature, test_label)
+        # test_args = dict(shuffle=False, batch_size=1, num_workers=8)
+        # self.test_loader = DataLoader(test, **test_args)
+        # else:
+
+
+        # test_feature, test_label, self.df_test = self.process_data(df_test, test=True)
+        # test = TrainDataset(test_feature, test_label)
+        # test_args = dict(shuffle=False, batch_size=self.args.batch_size, num_workers=2)
+        # self.test_loader = DataLoader(test, **test_args)
+
+        # self.model = ALSTM(train_feature[0].shape[1], self.parameters['unit']).to(device)
         self.model = self._build_model()
         self.criterion = nn.MSELoss()
         self.optimizer = optim.Adam(self.model.parameters(), lr=self.args.learning_rate)
@@ -74,6 +99,10 @@ class Exp_Main(Exp):
                 nn.init.uniform_(p)
 
         if use_pretrain:
+            # if self.full:
+            #     checkpoint = torch.load( './' + file_name + '_full_us_model.pth')
+            # else:
+
             checkpoint = torch.load(self.path + '/checkpoint.pth') 
             self.model.load_state_dict(checkpoint['model_state_dict'])
             self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
@@ -89,14 +118,21 @@ class Exp_Main(Exp):
             'Nlinear': Nlinear,
             'Mlp': Mlp
         }
-
+        # device = torch.device("cuda:9" if torch.cuda.is_available() else "cpu")
         model = model_dict[self.args.model].Model(self.args).float()
+
+        # if self.args.use_multi_gpu and self.args.use_gpu:
+        #     model = nn.DataParallel(model, device_ids=self.args.device_ids)
         model.to(self.args.gpu)
 
         print("build model")
         print(self.args.gpu)
     
         return model
+
+    # def _get_data(self, flag):
+    #     data_set, data_loader = data_provider(self.args, flag)
+    #     return data_set, data_loader
     
     
     def process_data(self, df, test=False):
@@ -168,9 +204,28 @@ class Exp_Main(Exp):
             df = self.df_train[(self.df_train['date'] >= dates[start]) & (self.df_train['date'] < (str(years[i+1]) + "-01-01"))]
 
             train_feature, train_label = self.process_data(df)
+
+            pid = psutil.Process()
+
+            # Get memory usage statistics
+            memory_info = pid.memory_info()
+
+            memory_usage_gb = memory_info.rss / (1024 * 1024 * 1024)
+            print("after process")
+            print("Memory usage (GB):", memory_usage_gb)
+
             train = TrainDataset(train_feature, train_label)
             train_args = dict(shuffle=True, batch_size=self.args.batch_size, num_workers=8)
             self.train_loader = DataLoader(train, **train_args)
+
+            print("after dataloader")
+            pid = psutil.Process()
+
+            # Get memory usage statistics
+            memory_info = pid.memory_info()
+
+            memory_usage_gb = memory_info.rss / (1024 * 1024 * 1024)
+            print("Memory usage (GB):", memory_usage_gb)
 
             for (inputs, targets) in tqdm(self.train_loader):
                 inputs, targets = inputs.to(self.args.gpu), targets.to(self.args.gpu)
@@ -185,6 +240,8 @@ class Exp_Main(Exp):
                 else:
                     loss.backward()
                     self.optimizer.step()
+                # loss.backward()
+                # self.optimizer.step()
                 train_loss += loss.item()
 
                 prediction.extend(list(output.detach().cpu().numpy().reshape(-1)))
@@ -226,9 +283,27 @@ class Exp_Main(Exp):
 
             valid_feature, valid_label = self.process_data(df)
 
+            pid = psutil.Process()
+
+            # Get memory usage statistics
+            memory_info = pid.memory_info()
+
+            memory_usage_gb = memory_info.rss / (1024 * 1024 * 1024)
+            print("after process")
+            print("Memory usage (GB):", memory_usage_gb)
+
             valid = TrainDataset(valid_feature, valid_label)
             valid_args = dict(shuffle=False, batch_size=self.args.batch_size, num_workers=8)
             self.val_loader = DataLoader(valid, **valid_args)
+
+            print("after dataloader")
+            pid = psutil.Process()
+
+            # Get memory usage statistics
+            memory_info = pid.memory_info()
+
+            memory_usage_gb = memory_info.rss / (1024 * 1024 * 1024)
+            print("Memory usage (GB):", memory_usage_gb)
 
             for (inputs, targets) in tqdm(self.val_loader):
                 inputs, targets = inputs.to(self.args.gpu), targets.to(self.args.gpu)
@@ -262,6 +337,10 @@ class Exp_Main(Exp):
 
 
     def predict(self):
+        # if self.args.data == "full":
+        #     checkpoint = torch.load( './' + file_name + '_full_us_model.pth')
+        # else:
+        #     checkpoint = torch.load('./' + file_name + '_us_model.pth') 
         checkpoint = torch.load(self.path + '/checkpoint.pth')
         self.model.load_state_dict(checkpoint['model_state_dict'])
         self.model.eval()

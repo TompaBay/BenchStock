@@ -102,7 +102,10 @@ class Exp_Graph(Exp):
         train_feature, train_label = self.process_data(df_train)
         valid_feature, valid_label = self.process_data(df_valid)
 
-        self.adj_matrix = mask(DTW(train_feature[0]), self.args.seq_len / 2)
+        self.adj = mask(DTW(train_feature[0]), self.args.seq_len / 2)
+        np.save("dynamic_graph.npy", self.adj)
+        a=3/0
+
 
         train = TrainDataset(train_feature, train_label)
         train_args = dict(shuffle=True, batch_size=1, num_workers=8)
@@ -130,6 +133,10 @@ class Exp_Graph(Exp):
                 nn.init.uniform_(p)
 
         if use_pretrain:
+            # if self.full:
+            #     checkpoint = torch.load( './' + file_name + '_full_us_model.pth')
+            # else:
+
             checkpoint = torch.load(self.path + '/checkpoint.pth') 
             self.model.load_state_dict(checkpoint['model_state_dict'])
             self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
@@ -151,8 +158,11 @@ class Exp_Graph(Exp):
             'Sthan_sr': Sthan_sr,
             'Alsp_tf': Alsp_tf
         }
-
+        # device = torch.device("cuda:9" if torch.cuda.is_available() else "cpu")
         model = model_dict[self.args.model].Model(self.args).float()
+
+        # if self.args.use_multi_gpu and self.args.use_gpu:
+        #     model = nn.DataParallel(model, device_ids=self.args.device_ids)
         model.to(self.args.gpu)
     
         return model

@@ -147,6 +147,15 @@ def main():
     args = parser.parse_args()
 
     args.use_gpu = True if torch.cuda.is_available() and args.use_gpu else False
+<<<<<<< HEAD
+=======
+
+    # if args.use_gpu and args.use_multi_gpu:
+    #     args.devices = args.devices.replace(' ', '')
+    #     device_ids = args.devices.split(',')
+    #     args.device_ids = [int(id_) for id_ in device_ids]
+    #     args.gpu = args.device_ids[0]
+>>>>>>> 109947ec0ece403a1d40a194a92ed80e2db0d46f
     args.gpu = torch.device("cuda:" + str(args.gpu) if torch.cuda.is_available() else "cpu")
 
     print('Args in experiment:')
@@ -175,7 +184,26 @@ def main():
     df = pd.read_feather(os.path.join(args.root_path, args.data_path))
 
     print(df)
+<<<<<<< HEAD
 
+=======
+    # Get the current process ID
+    pid = psutil.Process()
+
+    # Get memory usage statistics
+    memory_info = pid.memory_info()
+
+    # Print memory usage in bytes
+    print("Memory usage (bytes):", memory_info.rss)
+
+    # Convert memory usage to human-readable format (e.g., MB)
+    memory_usage_mb = memory_info.rss / (1024 * 1024)
+    print("Memory usage (MB):", memory_usage_mb)
+
+    memory_usage_gb = memory_info.rss / (1024 * 1024 * 1024)
+    print("Memory usage (GB):", memory_usage_gb)
+        
+>>>>>>> 109947ec0ece403a1d40a194a92ed80e2db0d46f
     if args.market == 'us':
         df.rename(columns={'PERMNO': 'code'}, inplace=True)
         df.drop(columns=['return', 'high', 'low',
@@ -227,8 +255,34 @@ def main():
                 df_valid = df[(df['date'] >= valid_start) & (df['date'] < (str(test_year) + "-01-01"))]
                 df_test = df[(df['date'] >= test_start) & (df['date'] < (str(test_year + 1) + "-01-01"))]
 
+<<<<<<< HEAD
                 # Select stocks with enough test data
                 count = df_test.groupby("code").count()
+=======
+                # Get the current process ID
+                pid = psutil.Process()
+
+                # Get memory usage statistics
+                memory_info = pid.memory_info()
+
+                # Print memory usage in bytes
+                print("Memory usage (bytes):", memory_info.rss)
+
+                # Convert memory usage to human-readable format (e.g., MB)
+                memory_usage_mb = memory_info.rss / (1024 * 1024)
+                print("Memory usage (MB):", memory_usage_mb)
+
+                memory_usage_gb = memory_info.rss / (1024 * 1024 * 1024)
+                print("Memory usage (GB):", memory_usage_gb)
+
+                # Select stocks with enough test data
+                count = df_test.groupby("code").count()
+                # if not args.full:
+                #     mode_num = count['code'].mode().to_numpy()[0]
+                #     count = count[count['code'] == mode_num]
+                # else:
+                #     count = count[count['code'] >= args.l]
+>>>>>>> 109947ec0ece403a1d40a194a92ed80e2db0d46f
                 count = count[count['date'] > args.seq_len]
                 
                 df_test = df_test[df_test['code'].isin(list(count.index))]
@@ -252,6 +306,7 @@ def main():
                 account = Backtest(args.cash, topk=args.topk, n_drop=args.turnover, trade_cost=args.fee)
 
                 print(args.full)
+<<<<<<< HEAD
                 if args.market == "us":
                     if args.full:
                         prediction, label = exp.predict()
@@ -288,6 +343,26 @@ def main():
                             df_pred = pd.DataFrame({'code': code_list, 'pred': prediction[j]})
                             account.trade_cn(df_pred.merge(df_today, on="code", how="left"))
 
+=======
+                if args.full:
+                    prediction, label = exp.predict()
+                    df_test = exp.df_test
+                    print(df_test)
+                    df_test['pred'] = prediction
+                    print(df_test)
+                    for j in tqdm(range(len(test_dates))):
+                        date = test_dates[j]
+                        df_today = df_test[df_test['date'] == date].loc[:, ['code', 'pred', 'date', 'label', 'DlyPrc', 'ShrOut', 'DlyVol', 'SecurityEndDt']]
+                        account.trade_us(df_today, args.full)
+                else:
+                    prediction, label = exp.predict()
+                    for j in tqdm(range(len(test_dates))):
+                        date = test_dates[j]
+                        df_today = df_test[df_test['date'] == date]
+                        df_today = df_today.loc[:, ['code', 'date', 'label', 'DlyPrc', 'ShrOut', 'DlyVol']]
+                        df_pred = pd.DataFrame({'code': code_list, 'pred': prediction[j]})
+                        account.trade_us(df_pred.merge(df_today, on="code", how="left"))
+>>>>>>> 109947ec0ece403a1d40a194a92ed80e2db0d46f
 
                 torch.cuda.empty_cache()
 
@@ -321,5 +396,51 @@ def main():
                     json.dump(data, file)
                 
 
+<<<<<<< HEAD
+=======
+            # print(performance)
+
+
+            # with open(save_path + "/" + str(ii+1) + "/performance.json" , 'w') as file:
+            #     json.dump(performance, file)
+
+            # exp = Exp(args)  # set experiments
+            # print('>>>>>>>start training : {}>>>>>>>>>>>>>>>>>>>>>>>>>>'.format(setting))
+            # exp.train(setting)
+
+            # print('>>>>>>>testing : {}<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<'.format(setting))
+            # exp.test(setting)
+
+            # if args.do_predict:
+            #     print('>>>>>>>predicting : {}<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<'.format(setting))
+            #     exp.predict(setting, True)
+
+            # torch.cuda.empty_cache()
+    # else:
+    #     ii = 0
+    #     setting = '{}_{}_{}_ft{}_sl{}_ll{}_pl{}_dm{}_nh{}_el{}_dl{}_df{}_fc{}_eb{}_dt{}_{}_{}'.format(args.model_id,
+    #                                                                                                   args.model,
+    #                                                                                                   args.data,
+    #                                                                                                   args.features,
+    #                                                                                                   args.seq_len,
+    #                                                                                                   args.label_len,
+    #                                                                                                   args.pred_len,
+    #                                                                                                   args.d_model,
+    #                                                                                                   args.n_heads,
+    #                                                                                                   args.e_layers,
+    #                                                                                                   args.d_layers,
+    #                                                                                                   args.d_ff,
+    #                                                                                                   args.factor,
+    #                                                                                                   args.embed,
+    #                                                                                                   args.distil,
+    #                                                                                                   args.des, ii)
+
+    #     exp = Exp(args)  # set experiments
+    #     print('>>>>>>>testing : {}<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<'.format(setting))
+    #     exp.test(setting, test=1)
+    #     torch.cuda.empty_cache()
+
+
+>>>>>>> 109947ec0ece403a1d40a194a92ed80e2db0d46f
 if __name__ == "__main__":
     main()

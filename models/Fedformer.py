@@ -1,6 +1,3 @@
-import math
-import numpy as np
-
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -10,6 +7,11 @@ from layers.FourierCorrelation import FourierBlock, FourierCrossAttention
 from layers.MultiWaveletCorrelation import MultiWaveletCross, MultiWaveletTransform
 from layers.SelfAttention_Family import FullAttention, ProbAttention
 from layers.Autoformer_EncDec import Encoder, Decoder, EncoderLayer, DecoderLayer, my_Layernorm, series_decomp, series_decomp_multi
+import math
+import numpy as np
+
+
+device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 
 class Model(nn.Module):
@@ -56,15 +58,18 @@ class Model(nn.Module):
             encoder_self_att = FourierBlock(in_channels=configs.d_model,
                                             out_channels=configs.d_model,
                                             seq_len=self.seq_len,
+                                            n_head = configs.n_heads,
                                             modes=configs.modes,
                                             mode_select_method=configs.mode_select)
             decoder_self_att = FourierBlock(in_channels=configs.d_model,
                                             out_channels=configs.d_model,
+                                            n_head = configs.n_heads,
                                             seq_len=self.seq_len//2+self.pred_len,
                                             modes=configs.modes,
                                             mode_select_method=configs.mode_select)
             decoder_cross_att = FourierCrossAttention(in_channels=configs.d_model,
                                                       out_channels=configs.d_model,
+                                                      n_head = configs.n_heads,
                                                       seq_len_q=self.seq_len//2+self.pred_len,
                                                       seq_len_kv=self.seq_len,
                                                       modes=configs.modes,
@@ -119,6 +124,7 @@ class Model(nn.Module):
                 enc_self_mask=None, dec_self_mask=None, dec_enc_mask=None):
         # decomp init
         mean = torch.mean(x_enc, dim=1).unsqueeze(1).repeat(1, self.pred_len, 1)
+        zeros = torch.zeros([x_dec.shape[0], self.pred_len, x_dec.shape[2]]).to(device)  # cuda()
         seasonal_init, trend_init = self.decomp(x_enc)
         # decoder input
         trend_init = torch.cat([trend_init[:, -self.label_len:, :], mean], dim=1)
@@ -137,3 +143,4 @@ class Model(nn.Module):
             return self.final(dec_out[:, -self.pred_len:, :]), attns
         else:
             return self.final(dec_out[:, -self.pred_len:, :])  # [B, L, D]
+
